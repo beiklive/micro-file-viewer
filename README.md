@@ -23,16 +23,13 @@
 [![Pulls][pulls:badge]][pulls]  
 [![Contributors][contributors:badge]][contributors]
 [![Commit Activity][commit-activity:badge]][commit-activity]  
-<!-- remove me before use it -->
-[![Use This][use-this:badge]][use-this]
-<!-- remove me before use it -->
 
-***micro-file-viewer is used to make C++ cross platform projects. Please modify the template content before use.***
+***micro-file-viewer is used to list and download file in browser.***
 
 ## Features
 
-- The best application.
-- The best programmer.
+- Cross-Platform.
+- Light.
 
 ## Reference
 
