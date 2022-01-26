@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="mfv.png" height="200"/>
+</p>  
+
 # micro-file-viewer
 
 [circleci]: https://app.circleci.com/pipelines/github/Ohto-Ai/micro-file-viewer
