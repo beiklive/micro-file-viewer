@@ -7,18 +7,25 @@
 
 auto applicationConfig =
     nlohmann::json::parse(R"(
-    {
-        "root": ".",
-        "server": {
-            "host": "localhost",
-            "port": 8080,
-            "require": "/file:"
-        },
-        "blob": {
-            "url_prefix": "http://localhost:8080/blob/"
-        }
+{
+    "server": {
+        "host": "localhost",
+        "port": 8021
+    },
+    "file": {
+        "ssl": false,
+        "host": "localhost",
+        "port": 8021,
+        "path": "file/",
+        "mount": "/file/",
+        "require": "/file:"
     }
+}
 )");
+
+ghc::filesystem::path filePathBase{};
+ghc::filesystem::path fileUrlPrefix{};
+ghc::filesystem::path requireUrlPrefix{};
 
 void loadConfig();
 void HandleFile(const httplib::Request &, httplib::Response &);
@@ -29,18 +36,6 @@ int main(int argc, char const *argv[])
     spdlog::info("Hello MFV!");
 
     loadConfig();
-
-    if (argc == 2)
-    {
-        spdlog::info("Use arg = {}.", argv[argc - 1]);
-        applicationConfig["server"]["port"] = std::atoi(argv[argc - 1]);
-    }
-    else if (argc == 3)
-    {
-        spdlog::info("Use arg = {} {}.", argv[argc - 2], argv[argc - 1]);
-        applicationConfig["server"]["host"] = argv[argc - 2];
-        applicationConfig["server"]["port"] = std::atoi(argv[argc - 1]);
-    }
 
     httplib::Server server;
 
@@ -56,7 +51,10 @@ int main(int argc, char const *argv[])
     }
 
     server.set_mount_point("/", "html");
-    server.Get(applicationConfig["server"]["require"].get<std::string>() + "(.*)", HandleFile);
+    spdlog::info("Server mount {} on {}", "/", "html");
+    server.set_mount_point(applicationConfig["file"]["mount"], applicationConfig["file"]["path"]);
+    spdlog::info("Server mount {} on {}", applicationConfig["file"]["mount"], applicationConfig["file"]["path"]);
+    server.Get(applicationConfig["file"]["require"].get<std::string>() + "(.*)", HandleFile);
 
     if (server.listen_after_bind())
     {
@@ -80,11 +78,11 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
     {
         do
         {
-            auto canonicalPath = ghc::filesystem::canonical(applicationConfig["root"].get<std::string>() + "/" + requirePath.string());
+            auto canonicalPath = ghc::filesystem::canonical(filePathBase / requirePath);
             auto relativePath = ghc::filesystem::relative(canonicalPath);
 
             j["canonical_path"] = canonicalPath.string();
-            j["path"] = relativePath.string();
+            j["path"] = ghc::filesystem::relative(canonicalPath, filePathBase).string();
             spdlog::debug("visit canonical path = {}", canonicalPath.string());
 
             if (!ghc::filesystem::exists(relativePath))
@@ -102,10 +100,13 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
                 for (const auto &item : ghc::filesystem::directory_iterator(relativePath))
                 {
                     nlohmann::json i;
+                    auto itemRelativePath = ghc::filesystem::relative(item.path(), filePathBase).string();
                     i["name"] = item.path().filename().string();
-                    i["path"] = item.path().string();
+                    i["path"] = itemRelativePath;
                     i["canonical_path"] = ghc::filesystem::canonical(item.path()).string();
-                    i["url"] = fmt::format("{}{}", applicationConfig["blob"]["url_prefix"], item.path().string());
+                    i["url"] = fmt::format("{}{}", item.is_directory() ? requireUrlPrefix.string() : fileUrlPrefix.string(), itemRelativePath);
+                    i["retrieval_url"] = fmt::format("{}{}", requireUrlPrefix.string(), itemRelativePath);
+                    i["access_url"] = fmt::format("{}{}", fileUrlPrefix.string(), itemRelativePath);
                     i["attrib"]["directory"] = item.is_directory();
                     i["attrib"]["character_file"] = item.is_character_file();
                     i["attrib"]["block_file"] = item.is_block_file();
@@ -181,4 +182,18 @@ void loadConfig()
         applicationConfigFile << applicationConfig.dump(4);
         applicationConfigFile.close();
     }
+
+    // check config
+    filePathBase = applicationConfig["file"]["path"].get<std::string>();
+    if (!ghc::filesystem::exists(filePathBase))
+    {
+        ghc::filesystem::create_directories(filePathBase);
+        spdlog::info("Create directory {}", filePathBase.string());
+    }
+
+    auto baseUrl = fmt::format("{}://{}", applicationConfig["file"]["ssl"] ? "https" : "http", applicationConfig["file"]["host"]);
+    if (applicationConfig["file"]["port"] != (applicationConfig["file"]["ssl"] ? 443 : 80))
+        baseUrl += fmt::format(":{}", applicationConfig["file"]["port"].get<int>());
+    fileUrlPrefix = fmt::format("{}{}/", baseUrl, applicationConfig["file"]["mount"]);
+    requireUrlPrefix = fmt::format("{}{}", baseUrl, applicationConfig["file"]["require"]);
 }
