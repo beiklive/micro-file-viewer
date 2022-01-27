@@ -8,15 +8,14 @@
 auto applicationConfig =
     nlohmann::json::parse(R"(
     {
-        "root":".",
-        "server":
-        {
-            "host":"localhost",
-            "port":8080
+        "root": ".",
+        "server": {
+            "host": "localhost",
+            "port": 8080,
+            "require": "/file:"
         },
-        "blob":
-        {
-            "url_prefix":"http://localhost:8080/blob/"
+        "blob": {
+            "url_prefix": "http://localhost:8080/blob/"
         }
     }
 )");
@@ -57,7 +56,7 @@ int main(int argc, char const *argv[])
     }
 
     server.set_mount_point("/", "html");
-    server.Get("/file:(.*)", HandleFile);
+    server.Get(applicationConfig["server"]["require"].get<std::string>() + "(.*)", HandleFile);
 
     if (server.listen_after_bind())
     {
@@ -83,9 +82,9 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
         {
             auto canonicalPath = ghc::filesystem::canonical(applicationConfig["root"].get<std::string>() + "/" + requirePath.string());
             auto relativePath = ghc::filesystem::relative(canonicalPath);
-            auto absolutePath = ghc::filesystem::absolute(canonicalPath);
-    
-            j["real_path"] = relativePath.string();
+
+            j["canonical_path"] = canonicalPath.string();
+            j["path"] = relativePath.string();
             spdlog::debug("visit canonical path = {}", canonicalPath.string());
 
             if (!ghc::filesystem::exists(relativePath))
