@@ -48,7 +48,7 @@ int main(int argc, char const *argv[])
     }
     else
     {
-        spdlog::critical("Server bind Failed. Cannot bind to {}:{}", applicationConfig["server"]["host"], applicationConfig["server"]["port"]);
+        spdlog::critical("Server bind Failed. Cannot bind to {}:{}", applicationConfig["server"]["host"], applicationConfig["server"]["port"].get<int>());
         return -1;
     }
 
