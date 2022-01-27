@@ -8,11 +8,15 @@
 auto applicationConfig =
     nlohmann::json::parse(R"(
     {
-        "folder-path":".",
+        "root":".",
         "server":
         {
             "host":"localhost",
             "port":8080
+        },
+        "blob":
+        {
+            "url_prefix":"http://localhost:8080/blob/"
         }
     }
 )");
@@ -77,12 +81,14 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
     {
         do
         {
-            requirePath = applicationConfig["folder-path"].get<std::string>() + "/" + requirePath.string();
-            j["real_path"] = requirePath.string();
-            spdlog::debug("visit real path = {}", j["real_path"]);
-            spdlog::debug("visit absolute path = {}", ghc::filesystem::absolute(j["real_path"]).string());
+            auto canonicalPath = ghc::filesystem::canonical(applicationConfig["root"].get<std::string>() + "/" + requirePath.string());
+            auto relativePath = ghc::filesystem::relative(canonicalPath);
+            auto absolutePath = ghc::filesystem::absolute(canonicalPath);
+    
+            j["real_path"] = relativePath.string();
+            spdlog::debug("visit canonical path = {}", canonicalPath.string());
 
-            if (!ghc::filesystem::exists(requirePath))
+            if (!ghc::filesystem::exists(relativePath))
             {
                 res.status = 404;
                 j["code"] = 404;
@@ -90,18 +96,17 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
                 j["message"] = httplib::detail::status_message(j["code"]);
                 break;
             }
-            SPDLOG_DEBUG("test");
-            if (ghc::filesystem::is_directory(requirePath))
+            if (ghc::filesystem::is_directory(relativePath))
             {
                 j["folder"] = true;
 
-                for (const auto &item : ghc::filesystem::directory_iterator(requirePath))
+                for (const auto &item : ghc::filesystem::directory_iterator(relativePath))
                 {
                     nlohmann::json i;
                     i["name"] = item.path().filename().string();
                     i["path"] = item.path().string();
-                    i["absolute_path"] = ghc::filesystem::absolute(item.path()).string();
-                    i["url"] = fmt::format("http:{}:{}/blob:{}", applicationConfig["server"]["host"], applicationConfig["server"]["port"].get<int>(), item.path().string());
+                    i["canonical_path"] = ghc::filesystem::canonical(item.path()).string();
+                    i["url"] = fmt::format("{}{}", applicationConfig["blob"]["url_prefix"], item.path().string());
                     i["attrib"]["directory"] = item.is_directory();
                     i["attrib"]["character_file"] = item.is_character_file();
                     i["attrib"]["block_file"] = item.is_block_file();
@@ -112,8 +117,6 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
                     i["attrib"]["fifo"] = item.is_fifo();
 
                     j["content"].push_back(i);
-
-                    spdlog::debug("directory visit path = {}", item.path().string());
                 }
             }
             else
