@@ -73,11 +73,21 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
     ghc::filesystem::path requirePath(req.matches[1]);
 
     j["require_path"] = requirePath.string();
+    j["code"] = 200;
 
     try
     {
         do
         {
+            auto weaklyCanonicalPath = ghc::filesystem::weakly_canonical(filePathBase / requirePath);
+
+            if (!ghc::filesystem::exists(weaklyCanonicalPath))
+            {
+                j["canonical_path"] = weaklyCanonicalPath.string();
+                j["code"] = 404;
+                break;
+            }
+
             auto canonicalPath = ghc::filesystem::canonical(filePathBase / requirePath);
             auto relativePath = ghc::filesystem::relative(canonicalPath);
 
@@ -85,14 +95,6 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
             j["path"] = ghc::filesystem::relative(canonicalPath, filePathBase).string();
             spdlog::debug("visit canonical path = {}", canonicalPath.string());
 
-            if (!ghc::filesystem::exists(relativePath))
-            {
-                res.status = 404;
-                j["code"] = 404;
-                j["success"] = true;
-                j["message"] = httplib::detail::status_message(j["code"]);
-                break;
-            }
             if (ghc::filesystem::is_directory(relativePath))
             {
                 j["folder"] = true;
@@ -124,33 +126,37 @@ void HandleFile(const httplib::Request &req, httplib::Response &res)
                 j["folder"] = false;
             }
 
-            res.status = 200;
             j["code"] = 200;
-            j["success"] = true;
-            j["message"] = httplib::detail::status_message(j["code"]);
-
         } while (false);
     }
     catch (nlohmann::json::invalid_iterator e)
     {
-        spdlog::error("nlohmann::json::invalid_iterator occur @HandleFile {}", e.what());
+        spdlog::error("Exception {} occur: {}", typeid(e).name(), e.what());
     }
     catch (nlohmann::json::parse_error e)
     {
-        spdlog::error("nlohmann::json::parse_error occur @HandleFile: {}", e.what());
+        spdlog::error("Exception {} occur: {}", typeid(e).name(), e.what());
     }
     catch (nlohmann::json::type_error e)
     {
-        spdlog::error("nlohmann::json::type_error occur @HandleFile {}", e.what());
+        spdlog::error("Exception {} occur: {}", typeid(e).name(), e.what());
     }
     catch (nlohmann::json::out_of_range e)
     {
-        spdlog::error("nlohmann::json::out_of_range occur @HandleFile {}", e.what());
+        spdlog::error("Exception {} occur: {}", typeid(e).name(), e.what());
+    }
+    catch (ghc::filesystem::filesystem_error e)
+    {
+        spdlog::error("Exception {} occur: {}", typeid(e).name(), e.what());
     }
     catch (...)
     {
-        spdlog::error("Unknow error occur @HandleFile");
+        spdlog::error("Unknow error occur");
     }
+
+    res.status = j["code"];
+    j["success"] = j["code"] == 200;
+    j["message"] = httplib::detail::status_message(j["code"]);
 
     res.set_content(j.dump(4), "application/json");
     spdlog::info("{} {} {} \t\tfrom {}:{}", j["code"].get<int>(), req.method, req.path, req.remote_addr, req.remote_port);
